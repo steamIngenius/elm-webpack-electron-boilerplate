@@ -4,11 +4,15 @@
   "description": "Some learnings on using Elm with Electron and Webpack",
   "main": "webpack.config.js",
   "scripts": {
+    "start": "electron main.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
     "elm"
   ],
   "author": "micah",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^1.4.14"
+  }
 }
