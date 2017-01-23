@@ -4,6 +4,8 @@ import Html exposing (Html, text, div, h2, button, input, form, label)
 import Html.Attributes exposing (type_, style, placeholder, value)
 import Html.Events exposing (onSubmit, onInput)
 import Http
+import Json.Encode as Encode
+import Json.Decode as Decode
 
 
 -- Model
@@ -22,10 +24,10 @@ type alias Model =
 initModel : Model
 initModel =
     Model
-        ""
-        ""
-        ""
-        ""
+        "usera"
+        "a"
+        "kitsune"
+        "8090"
         Nothing
         Nothing
 
@@ -52,22 +54,26 @@ view model =
         [ input
             [ onInput SetServer
             , placeholder "[host]"
+            , value model.server
             ]
             []
         , input
             [ onInput SetPort
             , placeholder "[port]"
+            , value model.serverPort
             ]
             []
         , input
             [ onInput SetUsername
             , placeholder "Username"
+            , value model.username
             ]
             []
         , input
             [ onInput SetPassword
             , type_ "password"
             , placeholder "Password"
+            , value model.password
             ]
             []
         , button [ type_ "Submit" ] [ text "Login" ]
@@ -85,10 +91,67 @@ type Msg
     | SetServer String
     | SetPort String
     | Encrypt String
+    | PublicKey (Result Http.Error String)
+    | SessionId (Result Http.Error String)
     | LoginResponse (Result Http.Error String)
 
 
-port encrypt : String -> Cmd msg
+port encrypt : ( String, String ) -> Cmd msg
+
+
+getPublicKey : String -> String -> Cmd Msg
+getPublicKey server serverPort =
+    let
+        url =
+            "http://"
+                ++ server
+                ++ ":"
+                ++ serverPort
+                ++ "/api/v1/auth/public-key"
+
+        request =
+            Http.getString url
+
+        cmd =
+            Http.send PublicKey request
+    in
+        cmd
+
+
+getSessionId : String -> String -> String -> String -> Cmd Msg
+getSessionId server serverPort username password =
+    let
+        url =
+            "http://"
+                ++ server
+                ++ ":"
+                ++ serverPort
+                ++ "/api/v1/auth/login"
+
+        creds =
+            [ ( "userName", (Encode.string username) )
+            , ( "encryptedPassword", (Encode.string password) )
+            ]
+
+        body =
+            Encode.object creds
+                |> Http.jsonBody
+
+        request =
+            Http.request
+                { body = body
+                , expect = Http.expectJson (Decode.field "session" Decode.string)
+                , headers = []
+                , method = "POST"
+                , timeout = Nothing
+                , url = url
+                , withCredentials = False
+                }
+
+        cmd =
+            Http.send SessionId request
+    in
+        cmd
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -99,7 +162,7 @@ update msg model =
     in
         case msg of
             Login ->
-                ( model, encrypt model.password )
+                ( model, getPublicKey model.server model.serverPort )
 
             SetUsername input ->
                 ( { model
@@ -129,12 +192,42 @@ update msg model =
                 , Cmd.none
                 )
 
+            PublicKey (Ok key) ->
+                let
+                    _ =
+                        Debug.log "Got this key: " key
+                in
+                    ( model, encrypt ( key, model.password ) )
+
+            PublicKey (Err err) ->
+                ( { model | error = Just (toString err) }, Cmd.none )
+
+            SessionId (Ok id) ->
+                let
+                    _ =
+                        Debug.log "Got this session: " id
+                in
+                    ( { model
+                        | sessionId = Just id
+                      }
+                    , Cmd.none
+                    )
+
+            SessionId (Err err) ->
+                ( { model | error = Just (toString err) }, Cmd.none )
+
             Encrypt ciphertext ->
                 let
                     _ =
-                        Debug.log "Got something back from js: " ciphertext
+                        Debug.log "Got something back from js land: " ciphertext
                 in
-                    ( model, Cmd.none )
+                    ( model
+                    , getSessionId
+                        model.server
+                        model.serverPort
+                        model.username
+                        ciphertext
+                    )
 
             _ ->
                 ( model, Cmd.none )
