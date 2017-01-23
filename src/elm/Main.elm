@@ -26,7 +26,7 @@ initModel =
     Model
         "usera"
         "a"
-        "kitsune"
+        "localhost"
         "8090"
         Nothing
         Nothing
@@ -41,8 +41,8 @@ init =
 -- View
 
 
-view : Model -> Html Msg
-view model =
+loginView : Model -> Html Msg
+loginView model =
     form
         [ onSubmit Login
         , style
@@ -80,6 +80,23 @@ view model =
         ]
 
 
+mainView : Model -> Html Msg
+mainView model =
+    form [ onSubmit LogoutRequest ]
+        [ button [ type_ "submit" ] [ text "Logout" ]
+        ]
+
+
+view : Model -> Html Msg
+view model =
+    case model.sessionId of
+        Just a ->
+            mainView model
+
+        Nothing ->
+            loginView model
+
+
 
 -- Update
 
@@ -93,7 +110,8 @@ type Msg
     | Encrypt String
     | PublicKey (Result Http.Error String)
     | SessionId (Result Http.Error String)
-    | LoginResponse (Result Http.Error String)
+    | LogoutRequest
+    | Logout (Result Http.Error String)
 
 
 port encrypt : ( String, String ) -> Cmd msg
@@ -154,6 +172,27 @@ getSessionId server serverPort username password =
         cmd
 
 
+logoutUser : Model -> Cmd Msg
+logoutUser model =
+    let
+        url =
+            "http://"
+                ++ model.server
+                ++ ":"
+                ++ model.serverPort
+                ++ "/api/v1/auth/logout"
+                ++ "?session="
+                ++ Maybe.withDefault "" model.sessionId
+
+        request =
+            Http.post url Http.emptyBody Decode.string
+
+        cmd =
+            Http.send Logout request
+    in
+        cmd
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
@@ -209,6 +248,7 @@ update msg model =
                 in
                     ( { model
                         | sessionId = Just id
+                        , error = Nothing
                       }
                     , Cmd.none
                     )
@@ -229,8 +269,19 @@ update msg model =
                         ciphertext
                     )
 
-            _ ->
-                ( model, Cmd.none )
+            LogoutRequest ->
+                ( model, logoutUser model )
+
+            Logout (Ok response) ->
+                ( { model | sessionId = Nothing }, Cmd.none )
+
+            Logout (Err err) ->
+                ( { model
+                    | error = Just (toString err)
+                    , sessionId = Nothing
+                  }
+                , Cmd.none
+                )
 
 
 
